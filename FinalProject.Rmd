@@ -1,0 +1,77 @@
+---
+title: "Storm Data Analysis"
+author: "Dale Richardson"
+date: "11/20/2016"
+output: 
+        html_document:
+                toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Impact of Severe Weather Events on United States Health and Economy
+
+## Synopsis
+
+## Data Processing
+Download and read in the data by using the link provided in the assignment instructions.
+
+```{r data download, cache = TRUE}
+## Download the data into the current working directory
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file(url, "stormdata.csv.bz2", method = "libcurl", quiet = TRUE)
+## Read in the first 200 lines of the file as a test
+myStorms <- read.csv("stormdata.csv.bz2", header = TRUE, stringsAsFactors = FALSE, nrow = 200)
+```
+
+Data has been downloaded and we now have a dataframe of 200 rows called myStorms. Let's check it out.
+```{r check data}
+head(myStorms)
+```
+Based on this output, I'll need to convert the BGN_DATE to the date class as well as the BGN_TIME.
+I'll read in the entire dataset now and then use dplyr and lubridate to fix the dates and times.
+
+```{r read full data, cache = TRUE}
+## Read the entire csv file
+myStorms <- read.csv("stormdata.csv.bz2", header = TRUE, stringsAsFactors = FALSE)
+## Load necessary packages
+require(dplyr, warn.conflicts = FALSE)
+require(lubridate, warn.conflicts = FALSE)
+## Convert myStorms to tibble
+myStorms <- tbl_df(myStorms)
+## Check 
+myStorms
+```
+Looks like we've got an issue here that didn't crop up when I only read in the first 200 lines of the csv.
+Missing values are now empty strings. I'll need to specify the na.strings argument.
+
+```{r re read full data, cache = TRUE}
+## Read the entire csv file
+myStorms <- read.csv("stormdata.csv.bz2", header = TRUE, stringsAsFactors = FALSE, 
+                     na.strings = c("NA", ""))
+## Convert myStorms to tibble
+myStorms <- tbl_df(myStorms)
+## Check 
+myStorms
+
+```
+There we go! All missing data are now coded as "NA". Great. Now, I will fix the encoding of the dates
+and times.
+
+```{r fix dates and times}
+## Convert BGN_DATE to date class
+## First, remove the unnecessary 0:00:00 in the BGN_DATE variable 
+myStorms <- myStorms %>% mutate(BGN_DATE = gsub("0:00:00", "", BGN_DATE)) %>%
+        mutate(BGN_DATE = mdy(BGN_DATE))
+## Check
+myStorms
+```
+
+It looks like I'm now ready to start exploring this data.
+
+## Results
+
+
+
