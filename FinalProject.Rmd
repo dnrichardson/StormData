@@ -22,6 +22,7 @@ Download and read in the data by using the link provided in the assignment instr
 ## Download the data into the current working directory
 url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
 download.file(url, "stormdata.csv.bz2", method = "libcurl", quiet = TRUE)
+
 ## Read in the first 200 lines of the file as a test
 myStorms <- read.csv("stormdata.csv.bz2", header = TRUE, stringsAsFactors = FALSE, nrow = 200)
 ```
@@ -30,29 +31,34 @@ Data has been downloaded and we now have a dataframe of 200 rows called myStorms
 ```{r check data}
 head(myStorms)
 ```
-Based on this output, I'll need to convert the BGN_DATE to the date class as well as the BGN_TIME.
-I'll read in the entire dataset now and then use dplyr and lubridate to fix the dates and times.
+Based on this output, I'll need to convert the BGN_DATE to the date class.
+I'll read in the entire dataset now and then use dplyr and lubridate to fix the dates.
 
 ```{r read full data, cache = TRUE}
 ## Read the entire csv file
 myStorms <- read.csv("stormdata.csv.bz2", header = TRUE, stringsAsFactors = FALSE)
+
 ## Load necessary packages
 require(dplyr, warn.conflicts = FALSE)
 require(lubridate, warn.conflicts = FALSE)
+
 ## Convert myStorms to tibble
 myStorms <- tbl_df(myStorms)
+
 ## Check 
 myStorms
 ```
 Looks like we've got an issue here that didn't crop up when I only read in the first 200 lines of the csv.
-Missing values are now empty strings. I'll need to specify the na.strings argument.
+For some reason when reading in the entire file, missing values have been encoded as empty strings instead of "NA". I'll need to specify the na.strings argument to ensure empty strings are encoded as "NA".
 
-```{r re read full data, cache = TRUE}
+```{r re-read full data, cache = TRUE}
 ## Read the entire csv file
 myStorms <- read.csv("stormdata.csv.bz2", header = TRUE, stringsAsFactors = FALSE, 
                      na.strings = c("NA", ""))
+
 ## Convert myStorms to tibble
 myStorms <- tbl_df(myStorms)
+
 ## Check 
 myStorms
 
@@ -65,13 +71,149 @@ and times.
 ## First, remove the unnecessary 0:00:00 in the BGN_DATE variable 
 myStorms <- myStorms %>% mutate(BGN_DATE = gsub("0:00:00", "", BGN_DATE)) %>%
         mutate(BGN_DATE = mdy(BGN_DATE))
+
 ## Check
-myStorms
+head(myStorms)
 ```
 
 It looks like I'm now ready to start exploring this data.
 
 ## Results
 
+#### Across the USA, which types of events are most harmful with respect to population health?
+
+To answer this question, we can group the data by the EVTYPE variable and plot the total number of 
+the INJURIES and FATALITIES variables across all the years. Here, I will use the plotly library for plotting
+and will plot only the top twenty fatality and injury causing severe weather events. 
+
+```{r harmful events, fig.width = 10}
+## Group by event
+myStormsByEvents <- group_by(myStorms, EVTYPE)
+
+## Which events produced the most fatalities?
+top20fatals <- summarise(myStormsByEvents, countFatalities = sum(FATALITIES, na.rm = TRUE)) %>% arrange(desc(countFatalities)) %>% head(., 20)
+
+## Which events produced the most injuries?
+top20injuries <- summarise(myStormsByEvents, countInjuries = sum(INJURIES, na.rm = TRUE)) %>% arrange(desc(countInjuries)) %>% head(., 20)
+
+## Load plotly
+require(plotly, warn.conflicts = TRUE, quietly = TRUE)
+
+p <- plot_ly(top20fatals, x = ~EVTYPE, y = ~countFatalities, type = "bar", name = "Fatalaties") %>%
+        layout(xaxis = list(title = "Top 20 Events with highest impact", tickangle = -45),
+               yaxis = list(title = "Count"),
+               margin = list(b = 175))
 
 
+q <- plot_ly(top20injuries, x = ~EVTYPE, y = ~countInjuries, type = "bar", name = "Injuries") %>%
+        layout( title = "Total Fatalaties and Injuries by Severe Weather Events from 1950-2011 (Top 20)",
+                xaxis = list(title = "Top 20 Events with highest impact", tickangle = -45),
+               yaxis = list(title = "Count"),
+               margin = list(l = 100, b = 175))
+
+
+subplot(p,q, titleY = TRUE)
+```
+
+##### Based on the plots above, it looks like the most harmful severe weather event is the Tornado, 
+followed by Excessive Heat and Flooding.
+
+I'd just like to quickly calculate the proportion of fatalities and injuries due to Tornados.
+
+```{r percent deaths by tornado}
+
+## Calculate the proportion of all deaths by Tornado. Number of Tornado deaths = 5633
+allFatals <- summarise(myStormsByEvents, countFatalities = sum(FATALITIES, na.rm = TRUE)) %>% 
+        summarise(total = sum(countFatalities))
+
+allInjuries <- summarise(myStormsByEvents, countInjuries = sum(INJURIES, na.rm = TRUE)) %>% 
+        summarise(total = sum(countInjuries))
+
+## Pull out the total counts of deaths and injuries by tornado
+tornadoDeaths <- top20fatals[top20fatals$EVTYPE == "TORNADO",2]
+
+tornadoInjuries <- top20injuries[top20injuries$EVTYPE == "TORNADO",2]
+
+## Calculate proportions
+tornadoDeaths / allFatals
+
+tornadoInjuries / allInjuries
+
+
+```
+
+According to the calculations above, Tornados account for around 37% of all deaths and 65% of all 
+injuries due to severe weather between 1950-2011. 
+ 
+Now, onto the second question.
+ 
+#### Across the USA, which types of events have the greatest economic consequences?
+ 
+To answer this question, I will take a look at the total damages incurred by properties and crops. Looking
+further into the data, I noticed two additional variables, PROPDMGEXP and CROPDMGEXP. I will look at their
+values now.
+
+```{r}
+
+## Check PROPDMG and CROPDMG
+head(myStorms$PROPDMG)
+head(myStorms$CROPDMG)
+
+## Check the corresponding EXP variables
+unique(myStorms$PROPDMGEXP)
+unique(myStorms$CROPDMGEXP)
+
+```
+Ahh. Fun times. According to what I've found by googling "PROPDMGEXP", the values "K", "k", "M", "m"
+and so on are essentially exponents or orders of magnitude that need to be multiplied by their corresponding
+damage values. For example, "K" and "k" refer to 1e03 (thousands), whereas "M" and "m" refer to 1e06 or millions.
+
+Let's create a smaller dataframe with only the variables we are interested in and calculate the 
+actual damage values by multiplying the EXP value and the DMG value.
+
+```{r economic damage, cache = TRUE}
+## Use dplyr to handle all transformations
+economicDamage <- myStorms %>% select(EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
+        group_by(EVTYPE) %>%
+        mutate(PROPDMGEXP = ifelse(PROPDMGEXP=="h"|PROPDMGEXP=="H", 1e2,
+                                      ifelse(PROPDMGEXP=="k"|PROPDMGEXP=="K", 1e3,
+                                      ifelse(PROPDMGEXP=="m"|PROPDMGEXP=="M", 1e6,
+                                      ifelse(PROPDMGEXP=="b"|PROPDMGEXP=="B", 1e9, 0))))) %>%
+        mutate(CROPDMGEXP = ifelse(CROPDMGEXP=="h"|CROPDMGEXP=="H", 1e2,
+                                      ifelse(CROPDMGEXP=="k"|CROPDMGEXP=="K", 1e3,
+                                      ifelse(CROPDMGEXP=="m"|CROPDMGEXP=="M", 1e6,
+                                      ifelse(CROPDMGEXP=="b"|CROPDMGEXP=="B", 1e9, 0))))) %>%
+        mutate(PROPDMG = PROPDMG * PROPDMGEXP, CROPDMG = CROPDMG * CROPDMGEXP)
+
+```
+
+```{r event damages, fig.width = 10}
+## Which events produced the most fatalities?
+top20props <- summarise(economicDamage, countPROPDMG = sum(PROPDMG, na.rm = TRUE)) %>% arrange(desc(countPROPDMG)) %>% head(., 20)
+
+## Which events produced the most injuries?
+top20crops <- summarise(economicDamage, countCROPDMG = sum(CROPDMG, na.rm = TRUE)) %>% arrange(desc(countCROPDMG)) %>% head(., 20)
+
+## Load plotly
+require(plotly, warn.conflicts = TRUE, quietly = TRUE)
+
+p <- plot_ly(top20props, x = ~EVTYPE, y = ~countPROPDMG, type = "bar", name = "Property Damage") %>%
+        layout(title = "Total Property Damage in USD Caused by Severe Weather Events from 1950-2011",
+                xaxis = list(title = "Top 20 Events with highest Economic Loss", tickangle = -45),
+               yaxis = list(title = "Billions of Dollars"),
+               margin = list(b = 175))
+
+p
+
+
+q <- plot_ly(top20crops, x = ~EVTYPE, y = ~countCROPDMG, type = "bar", name = "Crop Damage") %>%
+        layout( title = "Total Crop Damage in USD caused by Severe Weather Events from 1950-2011 (Top 20)",
+                xaxis = list(title = "Top 20 Events with highest Economic Loss", tickangle = -45),
+               yaxis = list(title = "Billions of Dollars"),
+               margin = list(l = 100, b = 175))
+
+q
+
+```
+ 
+According to these plots, most property damage is caused by Floods (~145 billion USD) and most crop loss is incurred by Drought (~14 billion USD). 
