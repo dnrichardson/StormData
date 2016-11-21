@@ -1,5 +1,5 @@
 ---
-title: "Storm Data Analysis"
+title: "Impact of Severe Weather Events on United States Health and Economy from 1950-2011"
 author: "Dale Richardson"
 date: "11/20/2016"
 output: 
@@ -11,9 +11,17 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Impact of Severe Weather Events on United States Health and Economy
-
 ## Synopsis
+In order to understand the impact of severe weather events on human health and economy in the United States,
+I have analyzed storm data from the [National Oceanic and Atmospheric Administration (NOAA)](www.noaa.gov)
+database for the years 1950-2011. I have focused primarily on two key indicators of impact on human health, the number of fatalities and number of injuries in the aftermath of a severe weather event, across the years 1950-2011.
+Simililarly, I have focused my attention on two indicators of impact on the economy, total property damage and total 
+crop damages incurred during 1950-2011 as a result of severe weather. In both cases, I have ranked the weather events according to impact on health and economy and have chosen to report only the **top twenty** events with the greatest impact. 
+
+My key findings based on the top twenty severe weather events with greatest impact are:
+
+1. There have been significant losses and injuries to human life as a result of severe weather. The event with the highest impact is **tornadoes**, which account for 65% of all weather-related injuries and 37% of all weather related fatalities.
+2. There have been significant impacts on the American economy as a consequence of severe weather events. **Floodings, hurricanes, tornadoes and drought** led to the most economic damage. Across the top 20 events, there has been a total of about 414 billion USD lost in property damages and another 47 billion USD in lost crops. 
 
 ## Data Processing
 Download and read in the data by using the link provided in the assignment instructions.
@@ -31,16 +39,17 @@ Data has been downloaded and we now have a dataframe of 200 rows called myStorms
 ```{r check data}
 head(myStorms)
 ```
-Based on this output, I'll need to convert the BGN_DATE to the date class.
+Based on this output, I'll need to convert the BGN_DATE to the date class, in case I want to do anything
+with dates.
+
 I'll read in the entire dataset now and then use dplyr and lubridate to fix the dates.
 
-```{r read full data, cache = TRUE}
+```{r read full data, cache = FALSE}
 ## Read the entire csv file
 myStorms <- read.csv("stormdata.csv.bz2", header = TRUE, stringsAsFactors = FALSE)
 
 ## Load necessary packages
-require(dplyr, warn.conflicts = FALSE)
-require(lubridate, warn.conflicts = FALSE)
+library(dplyr, warn.conflicts = FALSE)
 
 ## Convert myStorms to tibble
 myStorms <- tbl_df(myStorms)
@@ -68,6 +77,9 @@ and times.
 
 ```{r fix dates and times}
 ## Convert BGN_DATE to date class
+## Load lubridate
+library(lubridate, warn.conflicts = FALSE)
+
 ## First, remove the unnecessary 0:00:00 in the BGN_DATE variable 
 myStorms <- myStorms %>% mutate(BGN_DATE = gsub("0:00:00", "", BGN_DATE)) %>%
         mutate(BGN_DATE = mdy(BGN_DATE))
@@ -80,10 +92,10 @@ It looks like I'm now ready to start exploring this data.
 
 ## Results
 
-#### Across the USA, which types of events are most harmful with respect to population health?
+### Across the USA, which types of events are most harmful with respect to population health?
 
 To answer this question, we can group the data by the EVTYPE variable and plot the total number of 
-the INJURIES and FATALITIES variables across all the years. Here, I will use the plotly library for plotting
+the FATALITIES and INJURIES variables across all the years. Here, I will use the plotly library for plotting
 and will plot only the top twenty fatality and injury causing severe weather events. 
 
 ```{r harmful events, fig.width = 10}
@@ -115,8 +127,8 @@ q <- plot_ly(top20injuries, x = ~EVTYPE, y = ~countInjuries, type = "bar", name 
 subplot(p,q, titleY = TRUE)
 ```
 
-##### Based on the plots above, it looks like the most harmful severe weather event is the Tornado, 
-followed by Excessive Heat and Flooding.
+##### Based on the plot above, it looks like the most harmful severe weather event is the Tornado, 
+##### followed by Excessive Heat and Flooding.
 
 I'd just like to quickly calculate the proportion of fatalities and injuries due to Tornados.
 
@@ -147,7 +159,7 @@ injuries due to severe weather between 1950-2011.
  
 Now, onto the second question.
  
-#### Across the USA, which types of events have the greatest economic consequences?
+### Across the USA, which types of events have the greatest economic consequences?
  
 To answer this question, I will take a look at the total damages incurred by properties and crops. Looking
 further into the data, I noticed two additional variables, PROPDMGEXP and CROPDMGEXP. I will look at their
@@ -169,9 +181,11 @@ and so on are essentially exponents or orders of magnitude that need to be multi
 damage values. For example, "K" and "k" refer to 1e03 (thousands), whereas "M" and "m" refer to 1e06 or millions.
 
 Let's create a smaller dataframe with only the variables we are interested in and calculate the 
-actual damage values by multiplying the EXP value and the DMG value.
+actual damage values by multiplying the EXP value and the DMG value. I will reassign these non-abbreviated
+values to the same variables. If the EXP values are not "K", "k", "M", or "m", I will simply ignore them by 
+assigning a value of 0. 
 
-```{r economic damage, cache = TRUE}
+```{r economic damage, cache = FALSE}
 ## Use dplyr to handle all transformations
 economicDamage <- myStorms %>% select(EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
         group_by(EVTYPE) %>%
@@ -188,32 +202,45 @@ economicDamage <- myStorms %>% select(EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROP
 ```
 
 ```{r event damages, fig.width = 10}
-## Which events produced the most fatalities?
+## Which events produced the most property damage?
 top20props <- summarise(economicDamage, countPROPDMG = sum(PROPDMG, na.rm = TRUE)) %>% arrange(desc(countPROPDMG)) %>% head(., 20)
 
-## Which events produced the most injuries?
+## Which events produced the most crop damage?
 top20crops <- summarise(economicDamage, countCROPDMG = sum(CROPDMG, na.rm = TRUE)) %>% arrange(desc(countCROPDMG)) %>% head(., 20)
 
-## Load plotly
-require(plotly, warn.conflicts = TRUE, quietly = TRUE)
-
-p <- plot_ly(top20props, x = ~EVTYPE, y = ~countPROPDMG, type = "bar", name = "Property Damage") %>%
+## Make plots with plotly
+plot_ly(top20props, x = ~EVTYPE, y = ~countPROPDMG, type = "bar", name = "Property Damage") %>%
         layout(title = "Total Property Damage in USD Caused by Severe Weather Events from 1950-2011",
                 xaxis = list(title = "Top 20 Events with highest Economic Loss", tickangle = -45),
                yaxis = list(title = "Billions of Dollars"),
-               margin = list(b = 175))
+               margin = list(t = 75, b = 175))
 
-p
-
-
-q <- plot_ly(top20crops, x = ~EVTYPE, y = ~countCROPDMG, type = "bar", name = "Crop Damage") %>%
-        layout( title = "Total Crop Damage in USD caused by Severe Weather Events from 1950-2011 (Top 20)",
+plot_ly(top20crops, x = ~EVTYPE, y = ~countCROPDMG, type = "bar", name = "Crop Damage") %>%
+        layout( title = "Total Crop Damage in USD caused by Severe Weather Events from 1950-2011",
                 xaxis = list(title = "Top 20 Events with highest Economic Loss", tickangle = -45),
                yaxis = list(title = "Billions of Dollars"),
-               margin = list(l = 100, b = 175))
-
-q
-
+               margin = list(t = 75, b = 175))
 ```
- 
-According to these plots, most property damage is caused by Floods (~145 billion USD) and most crop loss is incurred by Drought (~14 billion USD). 
+
+According to the above plots, most property damage is incurred by ***Floods (nearly 145 billion USD)**, followed by
+Hurricanes/Typhoons (69 billion USD), Tornados (57 billion USD) and Storm surges (43 billion USD). It is interesting
+to observe that while Tornadoes were responsible for the most deaths and injuries from 1950-2011, they account for relatively minimal property damages, whereas Flooding resulted in the highest property damages but was among the 
+lowest of weather events leading to fatalities and injuries.
+
+In terms of crop damage, the severe weather event with the **highest economic impact is without a doubt, drought.** The next most severe weather event is Floods, or what I will call now, "Flooding-related" events, which are comprised
+of the event types, "FLOOD", "RIVER FLOOD" and "FLASH FLOOD". Below I show how I calculate the economic
+damages on crop loss for "Flooding-related" events.
+
+```{r flood sums}
+## Tally up events with the word "FLOOD" in them
+top20crops %>% filter(grepl("FLOOD", EVTYPE)) %>% summarise(totalFloodDamage = round(sum(countCROPDMG) / 1e9))
+```
+
+Drought has led to a total economic loss of around 14 billion USD from the period of 1950-2011, whereas Flooding-related events have caused damages of around 12 billion USD. However, when we consider the 
+total losses incurred across the top twenty events relative to property damage and crop damage, the 
+economic impact of these severe weather events is wholly clear. Across the 20 most severe weather events, there has been a total of around `r round(sum(top20props$countPROPDMG) / 1e9)` billion USD in property damages, whereas
+the United States has suffered around `r round(sum(top20crops$countCROPDMG) / 1e9)` billion USD in 
+lost crops.
+
+##### Thus, based on the plots and information above, there have been tremendous economic losses due to severe weather
+##### events in the United States from the period of 1950-2011.
